@@ -141,7 +141,7 @@ def api_calculate_multiple(request: MultiplePointsRequest):
 @app.post("/generate-chart", summary="生成焓湿图")
 def api_generate_chart(request: ChartRequest):
     """
-    生成包含多个状态点和过程线的焓湿图
+    生成包含多个状态点和过程线的数据（不再返回图片）。
     """
     try:
         # 转换数据格式
@@ -158,6 +158,8 @@ def api_generate_chart(request: ChartRequest):
                         'name': point.name,
                         'tdb': calc_result['tdb'],
                         'w': calc_result['w'],
+                        'h': calc_result['h'],
+                        'rh': calc_result['rh'],
                         'color': point.color,
                         'marker': point.marker,
                         'size': point.size,
@@ -176,21 +178,13 @@ def api_generate_chart(request: ChartRequest):
                     'width': line.width
                 })
 
-        # 生成图表
-        image_base64 = create_psych_chart(
-            request.pressure, 
-            points_data, 
-            process_lines_data
-        )
-        
         return {
             "success": True,
-            "image": f"data:image/png;base64,{image_base64}",
             "points": points_data,
             "process_lines": process_lines_data
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成图表时发生内部错误: {e}")
+        raise HTTPException(status_code=500, detail=f"生成数据时发生内部错误: {e}")
 
 @app.post("/mixing", summary="混风处理")
 def api_mixing(request: MixingRequest):
@@ -203,7 +197,17 @@ def api_mixing(request: MixingRequest):
     try:
         # 计算状态点1的属性
         props1 = {'P': request.pressure}
-        props1.update(request.point1)
+        # 转换参数格式
+        if 'tdb' in request.point1:
+            props1['T'] = request.point1['tdb'] + 273.15  # 转换为K
+        if 'w' in request.point1:
+            props1['W'] = request.point1['w'] / 1000      # 转换为kg/kg
+        # 如果直接提供了T和W，也支持
+        if 'T' in request.point1:
+            props1['T'] = request.point1['T']
+        if 'W' in request.point1:
+            props1['W'] = request.point1['W']
+            
         result1 = calculate_properties(props1)
         
         if not result1.get("success"):
@@ -211,7 +215,17 @@ def api_mixing(request: MixingRequest):
         
         # 计算状态点2的属性
         props2 = {'P': request.pressure}
-        props2.update(request.point2)
+        # 转换参数格式
+        if 'tdb' in request.point2:
+            props2['T'] = request.point2['tdb'] + 273.15  # 转换为K
+        if 'w' in request.point2:
+            props2['W'] = request.point2['w'] / 1000      # 转换为kg/kg
+        # 如果直接提供了T和W，也支持
+        if 'T' in request.point2:
+            props2['T'] = request.point2['T']
+        if 'W' in request.point2:
+            props2['W'] = request.point2['W']
+            
         result2 = calculate_properties(props2)
         
         if not result2.get("success"):

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, Suspense } from 'react';
 import { 
   Layout, 
   Card, 
@@ -7,7 +7,6 @@ import {
   Button, 
   Select, 
   Space, 
-  Divider, 
   Typography, 
   Row, 
   Col, 
@@ -16,60 +15,61 @@ import {
   message, 
   Tag,
   InputNumber,
-  Tooltip,
   Popconfirm,
-  Descriptions,
-  Alert
+  Divider,
+  Alert,
+  Skeleton
 } from 'antd';
 import { 
   PlusOutlined, 
-  DeleteOutlined, 
-  EditOutlined, 
-  EyeOutlined,
-  LineChartOutlined,
   CalculatorOutlined,
-  ReloadOutlined,
-  MergeCellsOutlined
+  LineChartOutlined,
+  ReloadOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
+import { usePointsStore } from './store/points';
 import './App.css';
 
-const { Header, Content, Sider } = Layout;
+const { Header, Content } = Layout;
 const { Title } = Typography;
 const { Option } = Select;
 
+// 懒加载PsychroChart组件
+const PsychroChart = React.lazy(() => import('./components/PsychroChart'));
+
 function App() {
-  // 状态管理
+  // Zustand状态管理
+  const { 
+    pressure, 
+    points, 
+    processLines, 
+    setPressure, 
+    setPoints, 
+    setProcessLines, 
+    addPoint, 
+    addProcessLine: addProcessLineToStore 
+  } = usePointsStore();
+
+  // 局部状态管理
   const [form] = Form.useForm();
-  const [points, setPoints] = useState([]);
-  const [processLines, setProcessLines] = useState([]);
-  const [chartImage, setChartImage] = useState('');
-  const [selectedPoint, setSelectedPoint] = useState(null);
-  const [selectedLine, setSelectedLine] = useState(null);
-  const [pointModalVisible, setPointModalVisible] = useState(false);
-  const [lineModalVisible, setLineModalVisible] = useState(false);
-  const [mixingModalVisible, setMixingModalVisible] = useState(false);
-  const [editingPoint, setEditingPoint] = useState(null);
-  const [pressure, setPressure] = useState(101325);
   const [loading, setLoading] = useState(false);
   const [calculationResult, setCalculationResult] = useState(null);
   const [showChart, setShowChart] = useState(false);
+  const [mixingModalVisible, setMixingModalVisible] = useState(false);
+  const [chartData, setChartData] = useState({ points: [], processLines: [] });
 
   // 参数选项
   const parameterOptions = [
-    { label: '干球温度 (°C)', value: 'T', unit: '°C', convert: (v) => v + 273.15 },
-    { label: '湿球温度 (°C)', value: 'B', unit: '°C', convert: (v) => v + 273.15 },
-    { label: '相对湿度 (%)', value: 'R', unit: '%', convert: (v) => v / 100 },
-    { label: '含湿量 (g/kg)', value: 'W', unit: 'g/kg', convert: (v) => v / 1000 },
-    { label: '焓值 (kJ/kg)', value: 'H', unit: 'kJ/kg', convert: (v) => v * 1000 },
-    { label: '露点温度 (°C)', value: 'D', unit: '°C', convert: (v) => v + 273.15 }
+    { label: '干球温度', value: 'T', unit: '°C', convert: (v) => v + 273.15 },
+    { label: '湿球温度', value: 'B', unit: '°C', convert: (v) => v + 273.15 },
+    { label: '相对湿度', value: 'R', unit: '%', convert: (v) => v / 100 },
+    { label: '含湿量', value: 'W', unit: 'g/kg', convert: (v) => v / 1000 },
+    { label: '焓值', value: 'H', unit: 'kJ/kg', convert: (v) => v * 1000 },
+    { label: '露点温度', value: 'D', unit: '°C', convert: (v) => v + 273.15 }
   ];
 
   // 颜色选项
-  const colorOptions = [
-    '#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1',
-    '#13c2c2', '#eb2f96', '#fa8c16', '#a0d911', '#2f54eb'
-  ];
+  const colorOptions = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2'];
 
   // 计算单个点
   const calculatePoint = async (values) => {
@@ -131,43 +131,21 @@ function App() {
     }
 
     const values = form.getFieldsValue();
-    const pointName = values.pointName || `点${points.length + 1}`;
+    const pointName = values.pointName && values.pointName.trim() !== '' 
+      ? values.pointName.trim() 
+      : `点${points.length + 1}`;
     
     const newPoint = {
       id: Date.now(),
       name: pointName,
       color: colorOptions[points.length % colorOptions.length],
-      marker: 'o',
-      size: 8,
-      properties: calculationResult,
-      tdb: calculationResult.tdb,
-      w: calculationResult.w
+      properties: calculationResult
     };
     
-    setPoints([...points, newPoint]);
-    message.success(`状态点 "${pointName}" 已添加到图表`);
-  };
-
-  // 添加状态点
-  const addPoint = async (values) => {
-    const result = await calculatePoint(values);
-    if (result) {
-      const newPoint = {
-        id: Date.now(),
-        name: values.name || `点${points.length + 1}`,
-        color: values.color || colorOptions[points.length % colorOptions.length],
-        marker: values.marker || 'o',
-        size: values.size || 8,
-        properties: result,
-        tdb: result.tdb,
-        w: result.w
-      };
-      
-      setPoints([...points, newPoint]);
-      setPointModalVisible(false);
-      form.resetFields();
-      message.success(`状态点 "${newPoint.name}" 添加成功`);
-    }
+    addPoint(newPoint);
+    message.success(`状态点 "${pointName}" 已添加`);
+    
+    form.setFieldsValue({ pointName: '' });
   };
 
   // 删除状态点
@@ -197,14 +175,11 @@ function App() {
       fromPointName: fromPoint.name,
       toPointName: toPoint.name,
       label: values.label || `${fromPoint.name}→${toPoint.name}`,
-      color: values.color || '#f5222d',
-      style: values.style || '-',
-      width: values.width || 2
+      color: values.color || '#f5222d'
     };
 
-    setProcessLines([...processLines, newLine]);
-    setLineModalVisible(false);
-    message.success(`过程线 "${newLine.label}" 添加成功`);
+    addProcessLineToStore(newLine);
+    message.success(`过程线 "${newLine.label}" 已添加`);
   };
 
   // 删除过程线
@@ -230,12 +205,12 @@ function App() {
       const requestData = {
         pressure: pressure,
         point1: {
-          tdb: fromPoint.properties.tdb + 273.15,
-          w: fromPoint.properties.w / 1000
+          tdb: fromPoint.properties.tdb,
+          w: fromPoint.properties.w
         },
         point2: {
-          tdb: toPoint.properties.tdb + 273.15,
-          w: toPoint.properties.w / 1000
+          tdb: toPoint.properties.tdb,
+          w: toPoint.properties.w
         },
         ratio: values.ratio / 100
       };
@@ -246,16 +221,14 @@ function App() {
         const result = response.data;
         const newPoint = {
           id: Date.now(),
-          name: values.name || `混风点${points.length + 1}`,
-          color: values.color || '#13c2c2',
-          marker: 'o',
-          size: 8,
-          properties: result,
-          tdb: result.tdb,
-          w: result.w
+          name: values.name && values.name.trim() !== '' 
+            ? values.name.trim() 
+            : `混风点${points.length + 1}`,
+          color: '#13c2c2',
+          properties: result
         };
         
-        setPoints([...points, newPoint]);
+        addPoint(newPoint);
         setMixingModalVisible(false);
         message.success(`混风点 "${newPoint.name}" 计算成功`);
       } else {
@@ -287,25 +260,25 @@ function App() {
             W: point.properties.w / 1000
           },
           color: point.color,
-          marker: point.marker,
-          size: point.size
+          marker: 'o',
+          size: 8
         })),
         process_lines: processLines.map(line => ({
           from_point: line.fromPointName,
           to_point: line.toPointName,
           label: line.label,
           color: line.color,
-          style: line.style,
-          width: line.width
+          style: '-',
+          width: 2
         }))
       };
 
       const response = await axios.post('/generate-chart', requestData);
       
       if (response.data.success) {
-        setChartImage(response.data.image);
         setShowChart(true);
         message.success('图表生成成功');
+        setChartData({ points: response.data.points, processLines: response.data.process_lines });
       } else {
         message.error('图表生成失败');
       }
@@ -357,34 +330,17 @@ function App() {
       render: (value) => `${value} kJ/kg`
     },
     {
-      title: '露点温度',
-      dataIndex: ['properties', 'tdp'],
-      key: 'tdp',
-      render: (value) => `${value}°C`
-    },
-    {
       title: '操作',
       key: 'actions',
       render: (_, record) => (
-        <Space>
-          <Tooltip title="查看详情">
-            <Button 
-              type="text" 
-              icon={<EyeOutlined />} 
-              onClick={() => setSelectedPoint(record)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="确定要删除这个状态点吗？"
-            onConfirm={() => deletePoint(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Tooltip title="删除">
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
+        <Popconfirm
+          title="确定要删除这个状态点吗？"
+          onConfirm={() => deletePoint(record.id)}
+          okText="确定"
+          cancelText="取消"
+        >
+          <Button type="text" danger size="small">删除</Button>
+        </Popconfirm>
       )
     }
   ];
@@ -413,469 +369,243 @@ function App() {
       title: '操作',
       key: 'actions',
       render: (_, record) => (
-        <Space>
-          <Tooltip title="查看详情">
-            <Button 
-              type="text" 
-              icon={<EyeOutlined />} 
-              onClick={() => setSelectedLine(record)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="确定要删除这个过程线吗？"
-            onConfirm={() => deleteProcessLine(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Tooltip title="删除">
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
+        <Popconfirm
+          title="确定要删除这个过程线吗？"
+          onConfirm={() => deleteProcessLine(record.id)}
+          okText="确定"
+          cancelText="取消"
+        >
+          <Button type="text" danger size="small">删除</Button>
+        </Popconfirm>
       )
     }
   ];
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ background: '#fff', padding: '0 24px' }}>
+      <Header style={{ background: '#fff', padding: '0 24px', borderBottom: '1px solid #f0f0f0' }}>
         <Title level={3} style={{ margin: '16px 0', color: '#1890ff' }}>
           <CalculatorOutlined /> 焓湿图计算工具
         </Title>
       </Header>
       
-      <Layout>
-        <Sider width={500} style={{ background: '#fff', padding: '16px' }}>
-          <Space direction="vertical" style={{ width: '100%' }} size="large">
-            
-            {/* 压力设置 */}
-            <Card title="压力设置" size="small">
-              <Form layout="vertical">
-                <Form.Item label="大气压力">
-                  <InputNumber
-                    value={pressure}
-                    onChange={setPressure}
-                    min={80000}
-                    max={120000}
-                    step={100}
-                    addonAfter="Pa"
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Form>
-            </Card>
-
-            {/* 参数计算 */}
-            <Card title="参数计算" size="small">
-              <Form form={form} layout="vertical">
-                <Row gutter={16}>
-                  {parameterOptions.map(option => (
-                    <Col span={12} key={option.value}>
-                      <Form.Item
-                        name={option.value}
-                        label={option.label}
-                      >
-                        <InputNumber
-                          placeholder={`输入${option.label}`}
-                          addonAfter={option.unit}
-                          style={{ width: '100%' }}
-                        />
-                      </Form.Item>
-                    </Col>
-                  ))}
-                </Row>
-                
-                <Space>
-                  <Button 
-                    type="primary" 
-                    icon={<CalculatorOutlined />}
-                    onClick={handleCalculate}
-                    loading={loading}
-                  >
-                    计算
-                  </Button>
-                  <Button 
-                    icon={<ReloadOutlined />}
-                    onClick={handleReset}
-                  >
-                    重置输入
-                  </Button>
-                </Space>
-              </Form>
-            </Card>
-
-            {/* 计算结果 */}
-            {calculationResult && (
-              <Card title="计算结果" size="small">
-                <Descriptions column={1} size="small">
-                  <Descriptions.Item label="干球温度">
-                    {calculationResult.tdb}°C
-                  </Descriptions.Item>
-                  <Descriptions.Item label="湿球温度">
-                    {calculationResult.twb}°C
-                  </Descriptions.Item>
-                  <Descriptions.Item label="相对湿度">
-                    {calculationResult.rh}%
-                  </Descriptions.Item>
-                  <Descriptions.Item label="含湿量">
-                    {calculationResult.w} g/kg
-                  </Descriptions.Item>
-                  <Descriptions.Item label="焓值">
-                    {calculationResult.h} kJ/kg
-                  </Descriptions.Item>
-                  <Descriptions.Item label="露点温度">
-                    {calculationResult.tdp}°C
-                  </Descriptions.Item>
-                </Descriptions>
-                
-                <Divider />
-                
-                <Form.Item label="状态点名称">
-                  <Input 
-                    placeholder="输入状态点名称"
-                    onChange={(e) => form.setFieldsValue({ pointName: e.target.value })}
-                  />
-                </Form.Item>
-                
-                <Button 
-                  type="primary" 
-                  icon={<PlusOutlined />}
-                  onClick={addCurrentPointToChart}
-                  block
-                >
-                  添加当前状态点
-                </Button>
+      <Content style={{ padding: '24px' }}>
+        <Row gutter={[24, 24]}>
+          {/* 左侧控制面板 */}
+          <Col xs={24} lg={12}>
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              
+              {/* 压力设置 */}
+              <Card title="压力设置" size="small">
+                <InputNumber
+                  value={pressure}
+                  onChange={setPressure}
+                  min={80000}
+                  max={120000}
+                  step={100}
+                  addonAfter="Pa"
+                  style={{ width: '100%' }}
+                />
               </Card>
-            )}
 
-            {/* 状态点管理 */}
-            <Card 
-              title="状态点管理" 
-              size="small"
-              extra={
-                <Button 
-                  type="primary" 
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setEditingPoint(null);
-                    form.resetFields();
-                    setPointModalVisible(true);
-                  }}
-                >
-                  添加点
-                </Button>
-              }
-            >
-              <Table
-                dataSource={points}
-                columns={pointColumns}
-                rowKey="id"
-                size="small"
-                pagination={false}
-                scroll={{ x: 'max-content' }}
-              />
-            </Card>
+              {/* 参数计算 */}
+              <Card title="参数计算" size="small">
+                <Form form={form} layout="vertical">
+                  <Row gutter={16}>
+                    {parameterOptions.map(option => (
+                      <Col span={12} key={option.value}>
+                        <Form.Item
+                          name={option.value}
+                          label={option.label}
+                        >
+                          <InputNumber
+                            placeholder={option.label}
+                            addonAfter={option.unit}
+                            style={{ width: '100%' }}
+                          />
+                        </Form.Item>
+                      </Col>
+                    ))}
+                  </Row>
+                  
+                  <Space>
+                    <Button 
+                      type="primary" 
+                      icon={<CalculatorOutlined />}
+                      onClick={handleCalculate}
+                      loading={loading}
+                    >
+                      计算
+                    </Button>
+                    <Button 
+                      icon={<ReloadOutlined />}
+                      onClick={handleReset}
+                    >
+                      重置
+                    </Button>
+                  </Space>
+                </Form>
+              </Card>
 
-            {/* 过程线管理 */}
-            <Card 
-              title="过程线管理" 
-              size="small"
-              extra={
-                <Space>
+              {/* 计算结果 */}
+              {calculationResult && (
+                <Card title="计算结果" size="small">
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <div><strong>干球温度:</strong> {calculationResult.tdb}°C</div>
+                      <div><strong>湿球温度:</strong> {calculationResult.twb}°C</div>
+                    </Col>
+                    <Col span={8}>
+                      <div><strong>相对湿度:</strong> {calculationResult.rh}%</div>
+                      <div><strong>含湿量:</strong> {calculationResult.w} g/kg</div>
+                    </Col>
+                    <Col span={8}>
+                      <div><strong>焓值:</strong> {calculationResult.h} kJ/kg</div>
+                      <div><strong>露点温度:</strong> {calculationResult.tdp}°C</div>
+                    </Col>
+                  </Row>
+                  
+                  <Divider />
+                  
+                  <Form form={form}>
+                    <Row gutter={16}>
+                      <Col span={16}>
+                        <Form.Item 
+                          name="pointName" 
+                          label="状态点名称"
+                          style={{ marginBottom: 0 }}
+                        >
+                          <Input 
+                            placeholder="输入状态点名称"
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Button 
+                          type="primary" 
+                          icon={<PlusOutlined />}
+                          onClick={addCurrentPointToChart}
+                          block
+                          style={{ marginTop: 29 }}
+                        >
+                          添加点
+                        </Button>
+                      </Col>
+                    </Row>
+                  </Form>
+                </Card>
+              )}
+
+              {/* 操作按钮 */}
+              <Card size="small">
+                <Space direction="vertical" style={{ width: '100%' }}>
                   <Button 
                     type="primary" 
-                    icon={<PlusOutlined />}
-                    onClick={() => setLineModalVisible(true)}
-                    disabled={points.length < 2}
+                    icon={<LineChartOutlined />}
+                    onClick={generateChart}
+                    loading={loading}
+                    block
                   >
-                    添加过程线
+                    生成焓湿图
                   </Button>
+                  
+                  {showChart && (
+                    <Button 
+                      onClick={() => setShowChart(false)}
+                      block
+                    >
+                      隐藏图表
+                    </Button>
+                  )}
+                </Space>
+              </Card>
+            </Space>
+          </Col>
+
+          {/* 右侧数据面板 */}
+          <Col xs={24} lg={12}>
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              
+              {/* 状态点管理 */}
+              <Card 
+                title="状态点管理" 
+                size="small"
+                extra={
                   <Button 
-                    type="default" 
-                    icon={<MergeCellsOutlined />}
+                    type="primary" 
+                    size="small"
+                    icon={<PlusOutlined />}
                     onClick={() => setMixingModalVisible(true)}
                     disabled={points.length < 2}
                   >
                     混风处理
                   </Button>
-                </Space>
-              }
-            >
-              <Table
-                dataSource={processLines}
-                columns={lineColumns}
-                rowKey="id"
-                size="small"
-                pagination={false}
-                scroll={{ x: 'max-content' }}
-              />
-            </Card>
+                }
+              >
+                <Table
+                  dataSource={points}
+                  columns={pointColumns}
+                  rowKey="id"
+                  size="small"
+                  pagination={false}
+                  scroll={{ x: 'max-content' }}
+                />
+              </Card>
 
-            {/* 图表操作 */}
-            <Card title="图表操作" size="small">
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Button 
-                  type="primary" 
-                  icon={<LineChartOutlined />}
-                  onClick={generateChart}
-                  loading={loading}
-                  block
-                >
-                  生成焓湿图
-                </Button>
-                
-                {showChart && (
-                  <Button 
-                    onClick={() => setShowChart(false)}
-                    block
-                  >
-                    隐藏图表
-                  </Button>
-                )}
-              </Space>
-            </Card>
-          </Space>
-        </Sider>
+              {/* 过程线管理 */}
+              <Card title="过程线管理" size="small">
+                <Table
+                  dataSource={processLines}
+                  columns={lineColumns}
+                  rowKey="id"
+                  size="small"
+                  pagination={false}
+                  scroll={{ x: 'max-content' }}
+                />
+              </Card>
+            </Space>
+          </Col>
+        </Row>
 
-        <Content style={{ padding: '16px' }}>
-          {showChart ? (
-            <Card title="焓湿图" style={{ height: '100%' }}>
-              {chartImage ? (
-                <div style={{ textAlign: 'center' }}>
-                  <img 
-                    src={chartImage} 
-                    alt="焓湿图" 
-                    style={{ maxWidth: '100%', height: 'auto' }}
-                  />
-                </div>
-              ) : (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '100px 0',
-                  color: '#999'
-                }}>
-                  <LineChartOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
-                  <p>点击"生成焓湿图"按钮来显示图表</p>
-                </div>
-              )}
-            </Card>
-          ) : (
-            <Card title="使用说明" style={{ height: '100%' }}>
+        {/* 图表显示区域 */}
+        {showChart && (
+          <Row style={{ marginTop: '24px' }}>
+            <Col span={24}>
+              <Card title="焓湿图" size="small">
+                <Suspense fallback={<Skeleton active />}>
+                  <div style={{ textAlign: 'center' }}>
+                    <PsychroChart 
+                      points={chartData.points} 
+                      processLines={chartData.processLines} 
+                    />
+                  </div>
+                </Suspense>
+              </Card>
+            </Col>
+          </Row>
+        )}
+
+        {/* 使用说明 */}
+        {!showChart && (
+          <Row style={{ marginTop: '24px' }}>
+            <Col span={24}>
               <Alert
-                message="欢迎使用焓湿图计算工具"
+                message="使用说明"
                 description={
                   <div>
-                    <p>1. 在左侧输入任意两个参数，点击"计算"查看结果</p>
-                    <p>2. 输入状态点名称，点击"添加当前状态点"将点添加到图表</p>
-                    <p>3. 添加多个状态点后，可以生成过程线或进行混风处理</p>
+                    <p>1. 输入任意两个参数，点击"计算"查看结果</p>
+                    <p>2. 输入状态点名称，点击"添加点"将点添加到图表</p>
+                    <p>3. 添加多个状态点后，可以进行混风处理</p>
                     <p>4. 点击"生成焓湿图"查看可视化结果</p>
                   </div>
                 }
                 type="info"
                 showIcon
-                style={{ marginBottom: '16px' }}
               />
-              
-              <div style={{ 
-                textAlign: 'center', 
-                padding: '50px 0',
-                color: '#999'
-              }}>
-                <LineChartOutlined style={{ fontSize: '64px', marginBottom: '16px' }} />
-                <p>点击"生成焓湿图"按钮来显示图表</p>
-              </div>
-            </Card>
-          )}
-        </Content>
-      </Layout>
-
-      {/* 添加状态点模态框 */}
-      <Modal
-        title="添加状态点"
-        open={pointModalVisible}
-        onCancel={() => {
-          setPointModalVisible(false);
-          form.resetFields();
-        }}
-        footer={null}
-        width="90vw"
-        maxWidth={600}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={addPoint}
-        >
-          <Form.Item
-            name="name"
-            label="点名称"
-            rules={[{ required: true, message: '请输入点名称' }]}
-          >
-            <Input placeholder="例如: 点A" />
-          </Form.Item>
-
-          <Form.Item name="color" label="颜色">
-            <Select placeholder="选择颜色">
-              {colorOptions.map(color => (
-                <Option key={color} value={color}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <div 
-                      style={{ 
-                        width: '16px', 
-                        height: '16px', 
-                        backgroundColor: color, 
-                        marginRight: '8px',
-                        borderRadius: '2px'
-                      }} 
-                    />
-                    {color}
-                  </div>
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Divider>输入参数 (选择两个)</Divider>
-
-          <Row gutter={16}>
-            {parameterOptions.map(option => (
-              <Col span={12} key={option.value}>
-                <Form.Item
-                  name={option.value}
-                  label={option.label}
-                >
-                  <InputNumber
-                    placeholder={`输入${option.label}`}
-                    addonAfter={option.unit}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Col>
-            ))}
-          </Row>
-
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" loading={loading}>
-                添加
-              </Button>
-              <Button onClick={() => {
-                setPointModalVisible(false);
-                form.resetFields();
-              }}>
-                取消
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* 添加过程线模态框 */}
-      <Modal
-        title="添加过程线"
-        open={lineModalVisible}
-        onCancel={() => setLineModalVisible(false)}
-        footer={null}
-        width="90vw"
-        maxWidth={500}
-      >
-        <Form
-          layout="vertical"
-          onFinish={addProcessLine}
-        >
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="fromPointId"
-                label="起始点"
-                rules={[{ required: true, message: '请选择起始点' }]}
-              >
-                <Select placeholder="选择起始点">
-                  {points.map(point => (
-                    <Option key={point.id} value={point.id}>
-                      <Tag color={point.color}>{point.name}</Tag>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="toPointId"
-                label="终点"
-                rules={[{ required: true, message: '请选择终点' }]}
-              >
-                <Select placeholder="选择终点">
-                  {points.map(point => (
-                    <Option key={point.id} value={point.id}>
-                      <Tag color={point.color}>{point.name}</Tag>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
             </Col>
           </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="label" label="标签">
-                <Input placeholder="过程线标签" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="color" label="颜色">
-                <Select placeholder="选择颜色">
-                  {colorOptions.map(color => (
-                    <Option key={color} value={color}>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <div 
-                          style={{ 
-                            width: '16px', 
-                            height: '16px', 
-                            backgroundColor: color, 
-                            marginRight: '8px',
-                            borderRadius: '2px'
-                          }} 
-                        />
-                        {color}
-                      </div>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="style" label="线型">
-                <Select placeholder="选择线型">
-                  <Option value="-">实线</Option>
-                  <Option value="--">虚线</Option>
-                  <Option value=":">点线</Option>
-                  <Option value="-.">点划线</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="width" label="线宽">
-                <InputNumber min={1} max={5} placeholder="2" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                添加
-              </Button>
-              <Button onClick={() => setLineModalVisible(false)}>
-                取消
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
+        )}
+      </Content>
 
       {/* 混风处理模态框 */}
       <Modal
@@ -946,27 +676,6 @@ function App() {
             </Col>
           </Row>
 
-          <Form.Item name="color" label="颜色">
-            <Select placeholder="选择颜色">
-              {colorOptions.map(color => (
-                <Option key={color} value={color}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <div 
-                      style={{ 
-                        width: '16px', 
-                        height: '16px', 
-                        backgroundColor: color, 
-                        marginRight: '8px',
-                        borderRadius: '2px'
-                      }} 
-                    />
-                    {color}
-                  </div>
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={loading}>
@@ -978,54 +687,6 @@ function App() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
-
-      {/* 状态点详情模态框 */}
-      <Modal
-        title="状态点详情"
-        open={!!selectedPoint}
-        onCancel={() => setSelectedPoint(null)}
-        footer={null}
-      >
-        {selectedPoint && (
-          <div>
-            <p><strong>名称:</strong> {selectedPoint.name}</p>
-            <p><strong>干球温度:</strong> {selectedPoint.properties.tdb}°C</p>
-            <p><strong>湿球温度:</strong> {selectedPoint.properties.twb}°C</p>
-            <p><strong>相对湿度:</strong> {selectedPoint.properties.rh}%</p>
-            <p><strong>含湿量:</strong> {selectedPoint.properties.w} g/kg</p>
-            <p><strong>焓值:</strong> {selectedPoint.properties.h} kJ/kg</p>
-            <p><strong>露点温度:</strong> {selectedPoint.properties.tdp}°C</p>
-          </div>
-        )}
-      </Modal>
-
-      {/* 过程线详情模态框 */}
-      <Modal
-        title="过程线详情"
-        open={!!selectedLine}
-        onCancel={() => setSelectedLine(null)}
-        footer={null}
-      >
-        {selectedLine && (
-          <div>
-            <p><strong>标签:</strong> {selectedLine.label}</p>
-            <p><strong>起始点:</strong> {selectedLine.fromPointName}</p>
-            <p><strong>终点:</strong> {selectedLine.toPointName}</p>
-            <p><strong>颜色:</strong> 
-              <span style={{ 
-                display: 'inline-block', 
-                width: '20px', 
-                height: '20px', 
-                backgroundColor: selectedLine.color,
-                marginLeft: '8px',
-                borderRadius: '2px'
-              }} />
-            </p>
-            <p><strong>线型:</strong> {selectedLine.style}</p>
-            <p><strong>线宽:</strong> {selectedLine.width}</p>
-          </div>
-        )}
       </Modal>
     </Layout>
   );

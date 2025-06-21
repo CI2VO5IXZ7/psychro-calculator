@@ -2,7 +2,7 @@
 
 # 焓湿图计算工具一键部署脚本
 # 作者: AI Assistant
-# 版本: 1.0.0
+# 版本: 2.0.0 - 支持交互式焓湿图
 
 set -e  # 遇到错误立即退出
 
@@ -16,6 +16,10 @@ NC='\033[0m' # No Color
 # 虚拟环境配置
 VENV_NAME="psychro_env"
 VENV_PATH="./$VENV_NAME"
+
+# 版本信息
+VERSION="2.0.0"
+FEATURES="交互式焓湿图 | Zustand状态管理 | Recharts图表库"
 
 # 日志函数
 log_info() {
@@ -72,6 +76,28 @@ check_system_requirements() {
     else
         log_error "未找到npm，请先安装npm"
         exit 1
+    fi
+    
+    # 检查关键前端依赖
+    if [[ -d "frontend" ]] && [[ -f "frontend/package.json" ]]; then
+        log_info "检查前端关键依赖..."
+        cd frontend
+        
+        # 检查zustand
+        if grep -q "zustand" package.json; then
+            log_success "Zustand状态管理库已配置"
+        else
+            log_warning "Zustand未在package.json中找到，将在安装时添加"
+        fi
+        
+        # 检查recharts
+        if grep -q "recharts" package.json; then
+            log_success "Recharts图表库已配置"
+        else
+            log_warning "Recharts未在package.json中找到，将在安装时添加"
+        fi
+        
+        cd ..
     fi
 }
 
@@ -152,6 +178,19 @@ install_node_dependencies() {
         if [[ -f "package.json" ]]; then
             log_info "安装前端依赖..."
             npm install
+            
+            # 确保关键依赖已安装
+            log_info "检查并安装关键依赖..."
+            if ! npm list zustand > /dev/null 2>&1; then
+                log_info "安装Zustand状态管理库..."
+                npm install zustand
+            fi
+            
+            if ! npm list recharts > /dev/null 2>&1; then
+                log_info "安装Recharts图表库..."
+                npm install recharts
+            fi
+            
             log_success "前端依赖安装完成"
         else
             log_error "未找到package.json文件"
@@ -262,6 +301,10 @@ start_frontend() {
 
 # 显示服务状态
 show_status() {
+    log_info "=== 焓湿图计算工具 v$VERSION ==="
+    log_info "功能特性: $FEATURES"
+    echo ""
+    
     log_info "服务状态:"
     
     # 检查后端服务
@@ -301,6 +344,12 @@ show_status() {
     log_info "虚拟环境:"
     echo "  路径: $VENV_PATH"
     echo "  激活: source $VENV_PATH/bin/activate"
+    echo ""
+    log_info "新功能说明:"
+    echo "  ✓ 交互式焓湿图 (Recharts渲染)"
+    echo "  ✓ 状态管理优化 (Zustand)"
+    echo "  ✓ 自定义状态点名称"
+    echo "  ✓ 混风处理功能"
 }
 
 # 停止服务
@@ -370,7 +419,8 @@ cleanup() {
 
 # 显示帮助信息
 show_help() {
-    echo "焓湿图计算工具部署脚本"
+    echo "焓湿图计算工具部署脚本 v$VERSION"
+    echo "功能特性: $FEATURES"
     echo ""
     echo "用法: $0 [选项]"
     echo ""
@@ -388,6 +438,12 @@ show_help() {
     echo "  $0 stop     # 停止服务"
     echo "  $0 status   # 查看状态"
     echo ""
+    echo "新功能:"
+    echo "  ✓ 交互式焓湿图 (支持缩放、悬浮提示)"
+    echo "  ✓ 状态管理优化 (Zustand)"
+    echo "  ✓ 自定义状态点名称"
+    echo "  ✓ 混风处理功能"
+    echo ""
     echo "虚拟环境:"
     echo "  路径: $VENV_PATH"
     echo "  激活: source $VENV_PATH/bin/activate"
@@ -398,7 +454,9 @@ show_help() {
 main() {
     case "${1:-start}" in
         "start")
-            log_info "开始部署焓湿图计算工具..."
+            log_info "开始部署焓湿图计算工具 v$VERSION..."
+            log_info "功能特性: $FEATURES"
+            echo ""
             check_system_requirements
             create_virtual_environment
             install_python_dependencies
@@ -408,6 +466,7 @@ main() {
             start_frontend
             show_status
             log_success "部署完成！"
+            log_info "新功能已启用：交互式焓湿图、状态管理优化、自定义状态点名称"
             ;;
         "stop")
             stop_services
