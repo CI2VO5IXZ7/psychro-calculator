@@ -28,7 +28,17 @@ import {
 } from '@ant-design/icons';
 import axios from 'axios';
 import { usePointsStore } from './store/points';
+import apiConfig from './config/api';
 import './App.css';
+
+// 创建配置好的 axios 实例
+const api = axios.create({
+  baseURL: apiConfig.baseURL,
+  timeout: apiConfig.timeout,
+  headers: {
+    'Content-Type': 'application/json',
+  }
+});
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -91,7 +101,7 @@ function App() {
         return null;
       }
 
-      const response = await axios.post('/calculate', inputs);
+      const response = await api.post(apiConfig.endpoints.calculate, inputs);
       
       if (response.data.success) {
         message.success('计算成功');
@@ -215,7 +225,7 @@ function App() {
         ratio: values.ratio / 100
       };
 
-      const response = await axios.post('/mixing', requestData);
+      const response = await api.post(apiConfig.endpoints.mixing, requestData);
       
       if (response.data.success) {
         const result = response.data;
@@ -273,7 +283,7 @@ function App() {
         }))
       };
 
-      const response = await axios.post('/generate-chart', requestData);
+      const response = await api.post(apiConfig.endpoints.generateChart, requestData);
       
       if (response.data.success) {
         setShowChart(true);

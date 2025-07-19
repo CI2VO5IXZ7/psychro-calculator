@@ -1,0 +1,89 @@
+# 焓湿图计算工具 - 腾讯云 Serverless 部署配置
+# 统一管理前后端部署
+
+app: psychro-calculator
+service: psychro-calculator
+
+# 全局配置
+provider:
+  name: tencent
+  region: ap-guangzhou
+  runtime: Python3.9
+
+# 部署阶段配置
+stage: ${opt:stage, 'prod'}
+
+# 自定义配置
+custom:
+  # API 网关配置
+  apiGateway:
+    serviceName: psychro-calculator-api
+    protocols:
+      - https
+      - http
+    environment: ${self:stage}
+    
+  # 存储配置
+  bucket:
+    name: psychro-calculator-${self:stage}
+    region: ${self:provider.region}
+
+# 函数配置
+functions:
+  api:
+    name: psychro-calculator-api-${self:stage}
+    component: scf
+    src: ./backend
+    handler: main_app.main
+    runtime: ${self:provider.runtime}
+    memorySize: 1024
+    timeout: 30
+    environment:
+      PYTHONPATH: /var/task
+      TZ: Asia/Shanghai
+      MATPLOTLIB_BACKEND: Agg
+      STAGE: ${self:stage}
+    events:
+      - apigw:
+          name: psychro-calculator-gateway-${self:stage}
+          parameters:
+            protocols: ${self:custom.apiGateway.protocols}
+            serviceName: ${self:custom.apiGateway.serviceName}-${self:stage}
+            description: 焓湿图计算API服务
+            environment: ${self:custom.apiGateway.environment}
+            endpoints:
+              - path: /
+                method: ANY
+                enableCORS: true
+                responseType: HTML
+                serviceTimeout: 30
+              - path: /{proxy+}
+                method: ANY
+                enableCORS: true
+                responseType: HTML
+                serviceTimeout: 30
+
+# 静态网站配置
+resources:
+  website:
+    component: website
+    name: psychro-calculator-frontend-${self:stage}
+    inputs:
+      src:
+        src: ./frontend/build
+        index: index.html
+        hook: cd frontend && npm install && npm run build:prod
+      region: ${self:provider.region}
+      bucketName: ${self:custom.bucket.name}
+      protocol: https
+      error:
+        code: 404
+        src: ./frontend/build/index.html
+
+# 插件配置
+plugins:
+  - serverless-tencent-scf
+
+# 部署后配置更新
+# 在部署完成后需要手动更新前端API配置
+# 将 API 网关地址更新到 frontend/src/config/api.js 中 

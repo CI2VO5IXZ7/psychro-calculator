@@ -1,0 +1,66 @@
+# 腾讯云静态网站托管配置
+component: website
+name: psychro-calculator-frontend
+
+app: psychro-calculator
+stage: prod
+
+inputs:
+  # 源码配置
+  src:
+    src: ./build
+    index: index.html
+    # 构建钩子 - 自动构建React应用
+    hook: npm run build
+    # 项目根目录
+    websitePath: ./
+    
+  # 部署区域
+  region: ap-guangzhou
+  
+  # 存储桶配置
+  bucketName: psychro-calculator-frontend
+  
+  # 协议配置
+  protocol: https
+  
+  # 域名配置（可选）
+  # domain: 
+  #   - psychro-calculator.example.com
+  
+  # CDN配置（可选，用于加速）
+  # cdn:
+  #   autoRefresh: true
+  #   refreshType: 0
+  #   refreshUrls:
+  #     - "https://your-domain.com/*"
+  
+  # 自定义错误页面
+  error:
+    code: 404
+    src: ./build/index.html
+    
+  # 缓存配置
+  # cache:
+  #   - type: file
+  #     rule: .*\.(gif|png|jpg|jpeg|bmp|swf|flv|mp4|ico|js|css|woff|woff2|ttf|eot|svg)$
+  #     time: 31536000
+  #   - type: directory  
+  #     rule: /(css|js|img)/
+  #     time: 31536000
+  #   - type: path
+  #     rule: /
+  #     time: 0
+      
+  # CORS配置（如果需要）
+  # cors:
+  #   - allowedOrigins:
+  #       - "*"
+  #     allowedMethods:
+  #       - "GET"
+  #       - "POST"
+  #       - "PUT"
+  #       - "DELETE"
+  #     allowedHeaders:
+  #       - "*"
+  #     maxAge: 3600 

@@ -8,6 +8,26 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
+# Serverless 环境优化
+import sys
+if '/var/task' not in sys.path:
+    sys.path.append('/var/task')
+
+# matplotlib 配置 - Serverless 环境优化
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
+import matplotlib.pyplot as plt
+plt.ioff()  # 关闭交互模式
+
+# 字体配置 - Serverless 环境
+import matplotlib.font_manager as fm
+try:
+    # 尝试设置中文字体
+    plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial Unicode MS']
+    plt.rcParams['axes.unicode_minus'] = False
+except Exception as e:
+    print(f"字体配置警告: {e}")
+
 # 从我们的核心模块中导入计算函数
 try:
     from calculator import calculate_properties, create_psych_chart, calculate_multiple_points
@@ -41,13 +61,9 @@ app = FastAPI(
 )
 
 # --- 配置 CORS (跨域资源共享) ---
-# 这对于前后端分离的开发模式至关重要
+# Serverless 环境下的 CORS 配置
 origins = [
-    "http://localhost:5173",  # 允许 Vite React 开发服务器的默认端口
-    "http://localhost:3000",  # 允许 Create React App 开发服务器的默认端口
-    "http://localhost",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
+    "*",  # Serverless 环境允许所有来源
 ]
 
 app.add_middleware(
@@ -104,7 +120,7 @@ class MixingRequest(BaseModel):
 @app.get("/health")
 def health_check():
     """健康检查接口"""
-    return {"status": "healthy", "message": "服务运行正常"}
+    return {"status": "healthy", "message": "服务运行正常", "environment": "serverless"}
 
 @app.post("/calculate", summary="计算湿空气参数")
 def api_calculate(inputs: PsychroInputs):
@@ -268,39 +284,40 @@ def api_mixing(request: MixingRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"混风计算时发生内部错误: {e}")
 
-# --- 静态文件处理 ---
-# 检查静态文件目录是否存在
-static_dirs = [
-    "../frontend/dist",  # 生产构建目录
-    "../frontend/build", # 备用构建目录
-    "./static",          # 本地静态目录
-]
-
-static_dir = None
-for dir_path in static_dirs:
-    if os.path.exists(dir_path):
-        static_dir = dir_path
-        break
-
-if static_dir:
+# --- Serverless 入口函数 ---
+def main(event, context):
+    """
+    腾讯云 SCF 入口函数
+    """
     try:
-        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
-        print(f"✅ 静态文件目录已挂载: {static_dir}")
-    except Exception as e:
-        print(f"⚠️ 静态文件挂载失败: {e}")
-        # 如果静态文件挂载失败，提供基本的API服务
-        @app.get("/")
-        def root():
-            return {"message": "API服务运行正常", "docs": "/docs"}
-else:
-    print("⚠️ 未找到静态文件目录，仅提供API服务")
-    @app.get("/")
-    def root():
-        return {"message": "API服务运行正常", "docs": "/docs"}
+        # 导入 Mangum 用于 ASGI 适配
+        from mangum import Mangum
+        handler = Mangum(app, lifespan="off")
+        return handler(event, context)
+    except ImportError:
+        # 如果没有 Mangum，尝试使用其他适配器
+        raise HTTPException(status_code=500, detail="Serverless 适配器未安装")
 
-# 如果直接运行此文件，可以使用 uvicorn 启动
+# 根路径处理
+@app.get("/")
+def root():
+    return {
+        "message": "焓湿图计算 API 服务",
+        "version": "2.0.0",
+        "environment": "serverless",
+        "docs": "/docs",
+        "endpoints": {
+            "health": "/health",
+            "calculate": "/calculate",
+            "calculate_multiple": "/calculate-multiple",
+            "generate_chart": "/generate-chart",
+            "mixing": "/mixing"
+        }
+    }
+
+# 如果直接运行此文件，可以使用 uvicorn 启动（本地开发）
 if __name__ == "__main__":
-    # 在 7000 端口上运行统一服务
+    # 本地开发模式
     print("🚀 启动焓湿图计算服务...")
     print("🌐 访问地址: http://localhost:7000")
     print("📚 API文档: http://localhost:7000/docs")

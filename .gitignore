@@ -159,4 +159,31 @@ celerybeat-schedule
 dmypy.json
 
 # Docker
-.dockerignore 
+.dockerignore
+
+# Serverless Framework
+.serverless/
+serverless_sdk/
+.serverless_plugins/
+
+# Deployment
+backend_url.txt
+frontend_url.txt
+*.zip
+
+# Cloud Provider
+.serverlessrc
+.aws/
+.azure/
+.gcp/
+
+# Tencent Cloud
+.tencent/
+.tcli/
+
+# Local config (keep example files)
+config.js
+
+# Deployment artifacts
+dist/
+package/ 
